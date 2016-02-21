@@ -1,0 +1,88 @@
+---
+title: "Practical machine learning course project"
+author: "Leonardo Windlin Cesar"
+date: "02/22/2016"
+output: html_document
+---
+
+```{r,echo=FALSE, results='hide', message=F, warning=F}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+##Setting things up
+The first step is really basic. We'll just set things up like loading libraries, setting the work directory and dowloading the data sets. **Important:** when reading the data, we'll assign the non available (NA) to be equal to blank and *NA*, so that when we clean the data we'll remove both *NA* and empty variables.
+
+
+
+```{r,echo=TRUE,cache=TRUE}
+#Load the caret package and set the directory
+library(caret)
+setwd("C:/Users/Leonardo/Documents/GitHub")
+
+#Download files and read the data sets
+fileUrltrain<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+fileUrltest<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+download.file(url=fileUrltrain,destfile = "./pml-training.csv", mode='wb')
+download.file(url=fileUrltest,destfile = "./pml-testing.csv", mode='wb')
+traindata<-read.csv("pml-training.csv",na.strings=c("", "NA"))
+testdata<-read.csv("pml-testing.csv",na.strings=c("", "NA"))
+```
+
+##Cleaning the data sets
+Now it's a really important step: we'll clean the data set, i.e., we'll remove variables with *NA*, highly correlated variables and variables with zero or near zero variance. We also remove variables that aren't useful for prediction, like the user names.
+
+```{r,echo=TRUE,cache=TRUE}
+# Remove variables with NAs
+traindata<-traindata[,colSums(is.na(traindata)) == 0]
+
+# Remove variables that can't be used as predictors
+traindata<-subset(traindata,select=-c(X, user_name,raw_timestamp_part_1,
+                                      raw_timestamp_part_2,cvtd_timestamp,
+                                      new_window, num_window))
+
+# Remove variables with zero or near zero variance
+zerovar<-nearZeroVar(traindata[sapply(traindata, is.numeric)],
+                     saveMetrics=TRUE)
+traindata<-traindata[,zerovar[,'nzv']==0]
+
+# Remove highly correlated variables, I'll use 0.8 as cutoff
+corre<-cor(traindata[sapply(traindata,is.numeric)])
+highcorre<-findCorrelation(corre,cutoff = 0.8)
+highcorre<-sort(highcorre)
+traindata<-traindata[,-c(highcorre)]
+```
+
+
+##Training the model
+Now for the actual modeling. We'll use a random forest model due to the nature of the problem. Note that this step may take a while (about ten minutes). We also use four fold croos validation in order to have a accurate model.
+
+###Make training set and test set
+We make training and test sets out of the clean data set. The training set has 60% of the original observations and test set with the remaining.
+
+```{r,echo=TRUE,cache=TRUE,message=F, warning=F}
+i <- createDataPartition(traindata$classe, p=0.6, list=FALSE )
+training <- traindata[i,]
+testing <- traindata[-i,]
+```
+
+###Random forest
+```{r,echo=TRUE,cache=TRUE,message=F, warning=F}
+rfcontrol<-trainControl(method="cv", 4)
+modfit<-train(classe ~ .,data=training,method='rf',trControl=rfcontrol)
+print(modfit)
+```
+
+As we can see, we come to a model with 20 predictor (*mtr*) resulting in 99.3% accuracy.
+
+##Testing the model
+Finnaly we test the model in the training set.
+
+```{r,echo=TRUE,cache=TRUE,message=F, warning=F}
+predict <- predict(modfit, testing)
+confusionMatrix(testing$classe, predict)
+accuracy <- postResample(predict, testing$classe)
+print(accuracy)
+```
+
+On the training set, we get 98.9% accuracy.
